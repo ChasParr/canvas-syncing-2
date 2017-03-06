@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<script src="/socket.io/socket.io.js"></script>
+    <script src="https://npmcdn.com/babel-core@5.8.38/browser.min.js"></script>
+    <script type="text/babel" >
+        "use strict";
+		let ctx;
+		let socket;
+		let id;
+		let draws = {};
+		
+		const draw = () => {
+			ctx.fillStyle="grey";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			let keys = Object.keys(draws);
+			
+			for(let i = 0; i < keys.length; i++){
+				const drawCall = draws[keys[i]];
+				ctx.fillStyle = drawCall.color;
+				ctx.fillRect(drawCall.x, drawCall.y, drawCall.width, drawCall.height);
+			}
+			console.log(draws);
+		};
+		
+		const moveSquare = (e) => {
+			let moveDir = {};
+			moveDir.id = id;
+			moveDir.xMove = (e.pageX - (draws[id].x + draws[id].width / 2)) / Math.abs(e.pageX - (draws[id].x + draws[id].width / 2));
+			moveDir.yMove = (e.pageY - (draws[id].y + draws[id].height / 2)) / Math.abs(e.pageY - (draws[id].y + draws[id].height / 2));
+			socket.emit('move', moveDir)
+		}
+		
+		const init = () => {
+			const canvas = document.querySelector("#canvas");
+			ctx = canvas.getContext('2d');
+			
+			socket = io.connect();
+			
+			socket.on('connect', () => {
+				console.log('connecting');
+				socket.emit('join', {});
+			});
+			
+			socket.on('syncClient', (data) => {
+				id = data.id;
+				draws = data.squares;
+				draw();
+				console.log('synced');
+			});
+			
+			socket.on('update', (data) => {
+				draws[data.id] = data.coords;
+				draw();
+			});
+			
+			
+			canvas.onmousedown = moveSquare;
+		};
+		
+		window.onload = init;
+    </script>
+</head>
+<body>
+	<canvas id="canvas" width="640" height="480"></canvas>
+</body>
+</html>

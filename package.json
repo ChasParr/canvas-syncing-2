@@ -1,0 +1,29 @@
+{
+  "name": "canvas-syncing-assignment-part1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./src/server.js",
+  "scripts": {
+    "start": "node ./src/server.js",
+    "pretest": "eslint ./src --fix",
+    "test": "echo \"tests complete\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChasParr/canvas-syncing-assignment-part1.git"
+  },
+  "author": "Chas Parr",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ChasParr/canvas-syncing-assignment-part1/issues"
+  },
+  "homepage": "https://github.com/ChasParr/canvas-syncing-assignment-part1#readme",
+  "devDependencies": {
+    "eslint": "^3.16.0",
+    "eslint-config-airbnb": "^14.1.0",
+    "eslint-plugin-import": "^2.2.0"
+  },
+  "dependencies": {
+    "socket.io": "^1.7.3"
+  }
+}

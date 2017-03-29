@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <title>Clik Competition</title>
-    <link rel="stylesheet" type="text/css" href="/style.css">
+    
 	<script src="/socket.io/socket.io.js"></script>
     <script src="https://npmcdn.com/babel-core@5.8.38/browser.min.js"></script>
     <script type="text/babel" >
@@ -11,9 +11,10 @@
 		let ctx;
 		let socket;
 		let id;
+        let roomNum;
 		let draws = {};
         let users = {};
-        
+        let rooms = [];
 		const draw = () => {
 			ctx.fillStyle="grey";
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -28,21 +29,30 @@
 			}
 		};
         
+        // display users in your room
         const displayUsers = () => {
             const userList = document.querySelector("#userList");
             // clear box
             userList.innerHTML = "";
             
-			let keys = Object.keys(users);
-            console.dir(users);
-			for(let i = 0; i < keys.length; i++){
+			for(let i = 0; i < rooms[roomNum].UserIds.length; i++){
                 let user = document.createElement("LI");
-                user.style.color = users[keys[i]].color;
-                user.innerHTML += (users[keys[i]].name + " - " + Math.round(users[keys[i]].points) + " points");
+                user.style.color = users[rooms[roomNum].UserIds[i]].color;
+                if (id === rooms[roomNum].UserIds[i]){
+                    user.style.listStyleType = "disc";
+                }
+                user.innerHTML += (users[rooms[roomNum].UserIds[i]].name + " - " + Math.round(users[rooms[roomNum].UserIds[i]].points) + " points");
+                if (rooms[roomNum].leader === rooms[roomNum].UserIds[i]){
+                    user.innerHTML += (" (leader)");
+                }
+                if (users[rooms[roomNum].UserIds[i]].spect){
+                    user.innerHTML += (" (spectator)");
+                }
                 userList.appendChild(user);
             }
         };
 		
+        // start a match
         const start = (e) => {
             console.log('start');
             socket.emit('start');
@@ -56,6 +66,24 @@
 			clickDat.y = e.pageY - canvas.offsetTop;
 			socket.emit('click', clickDat);
 		};
+        
+        const syncSettings = () => {
+            document.querySelector("#perRound").value = rooms[roomNum].Set.perRound;
+            document.querySelector("#minInter").value = rooms[roomNum].Set.minInter;
+            document.querySelector("#maxInter").value = rooms[roomNum].Set.maxInter;
+            document.querySelector("#minP").value = rooms[roomNum].Set.minP;
+            document.querySelector("#maxP").value = rooms[roomNum].Set.maxP;
+            document.querySelector("#missPenalty").value = rooms[roomNum].Set.missPenalty;
+            document.querySelector("#startS").value = rooms[roomNum].Set.startS;
+            document.querySelector("#endS").value = rooms[roomNum].Set.endS;
+            document.querySelector("#lifeTime").value = rooms[roomNum].Set.lifeTime;
+        };
+        
+        const syncName = () => {
+            document.querySelector("#nameField").value = users[id].name;
+        }
+        
+        
 		
 		const init = () => {
 			canvas = document.querySelector("#canvas");
@@ -76,17 +104,34 @@
 				id = data.id;
 				draws = data.Circles;
                 users = data.Users;
+                rooms = data.rooms;
+                roomNum = data.roomNum;
+                console.log(data.rooms);
+                console.log(rooms);
 				draw();
+                syncSettings();
+                syncName();
 				console.log('synced');
 			});
+            
+            socket.on('updateRoom', (data) => {
+                rooms[roomNum] = data.room;
+                console.log(data.room);
+                displayUsers();
+                syncSettings();
+            });
 			
 			socket.on('updateUsers', (data) => {
-				users[data.user.id] = data.user;
+                users[data.user.id] = data.user;
+                //if (rooms[roomNum].UserIds.indexOf(data.user.id) === -1){
+                //    rooms[roomNum].UserIds.push(data.user.id);
+                //}
                 displayUsers();
 			});
             
             socket.on('removeUser', (data) => {
 				delete users[data.id];
+                rooms[roomNum].UserIds.splice(rooms[roomNum].UserIds.indexOf(data.id), 1);
                 displayUsers();
 			});
             
@@ -101,8 +146,62 @@
 				draw();
                 displayUsers();
             });
+            
+            socket.on('end', (data) => {
+                console.log(users[data.winner] + ' won');
+            });
+            
+            socket.on('updateSettings', (data) => {
+                rooms[roomNum].Set = data.settings;
+                syncSettings();
+            });
+            
+            
+            
+            socket.on('denied', (data) => {
+                console.log(data.message);
+                
+                switch (data.code) {
+                  case "sett":{
+                    syncSettings();
+                    break;}
+                  case "name":{
+                    syncName();
+                    break;}
+                  default: {
+                    
+                    break;}
+                }
+            });
 			
 			canvas.onmousedown = sendClick;
+            
+            const userForm = document.querySelector("#userSettings");
+            const nameField = document.querySelector("#nameField");
+            
+            userForm.addEventListener('submit', (e) => {
+                socket.emit('changeName', { name: nameField.value });
+                e.preventDefault();
+            });
+            
+            
+            
+            const setForm = document.querySelector("#roomSettings");
+            setForm.addEventListener('submit', (e) => {
+                let settings = {};
+                settings.perRound = parseInt(document.querySelector("#perRound").value);
+                settings.minInter = parseInt(document.querySelector("#minInter").value);
+                settings.maxInter = parseInt(document.querySelector("#maxInter").value);
+                settings.minP = parseInt(document.querySelector("#minP").value);
+                settings.maxP = parseInt(document.querySelector("#maxP").value);
+                settings.missPenalty = parseInt(document.querySelector("#missPenalty").value);
+                settings.startS = parseInt(document.querySelector("#startS").value);
+                settings.endS = parseInt(document.querySelector("#endS").value);
+                settings.lifeTime = parseInt(document.querySelector("#lifeTime").value);
+                console.log(settings);
+                socket.emit('changeSettings', settings);
+                e.preventDefault();
+            });
             
             const startButton = document.querySelector("#startButton");
             startButton.addEventListener('click', start);
@@ -111,12 +210,127 @@
 		window.onload = init;
     </script>
     
+    <style>
+        body {
+            margin: 0px;
+            padding: 0px;
+            box-sizing: border-box;
+        }
+        #content {
+            max-width: 1300px;
+            margin: auto;
+            padding: 20px 0px 20px 0px;
+            box-shadow: 0px -1px 0px #376590;
+        }
+        #canvas {
+            display: inline-block;
+            padding: 20px 1px 1px 1px;
+        }
+        #userBox {
+            margin: 10px 15px 15px 50px;
+            float: right;
+            background-color: rgb(240,240,240);
+        }
+        #userList { 
+            margin: 5px;
+            padding: 5px 0px 10px 10px; 
+            list-style-type: none;
+            box-shadow: 0px 0px 1px grey;
+        }
+        #controls {
+            display: inline-block;
+        }
+        #userSettings {
+            display: inline-block;
+        }
+
+        .column3 {
+            margin: 2px;
+            padding: 2px;
+            display: inline-block;
+            box-shadow: 0px 0px 1px grey;
+        }
+        
+        .column3 input {
+            max-width:40px;
+        }
+        
+        .row {
+            margin: 2px;
+            padding: 0px;
+            width: 100%;
+        }
+    </style>
+    
 </head>
 <body>
+<div id="content">
+    <div class=row>
+    <canvas id="canvas" width="640" height="480"></canvas>
     
-	<canvas id="canvas" width="640" height="480"></canvas>
+    <div id="userBox">
+        <h3>Users:</h3>
+        <ul id="userList"></ul>
+        <form id="userSettings">
+            <label for="name">Name: </label>
+            <input id="nameField" type="text" name="name" />
+            <input type="submit" value="change" />
+        </form>
+    </div>
+    </div>
+    <div id="controls">
+    <form id="roomSettings">
+    <!--
+      newRoom.Set.growthRate = (newRoom.Set.endS - newRoom.Set.startS) /
+                                newRoom.Set.lifeTime; // circle growth rate
+    -->
+        <div class="column3">
+            <div class="row">
+                <label for="perRound">Circles per round: </label>
+                <input type="number" id="perRound" name="perRound" />
+            </div>
+            
+            <div class="row">
+                <label for="minInter">Min time between circles: </label>
+                <input type="number" id="minInter" name="minInter" />
+            </div>
+            <div class="row">
+                <label for="maxInter">Max time between circles: </label>
+                <input type="number" id="maxInter" name="maxInter" />
+            </div>
+        </div>
+        <div class="column3">
+            <div class="row">
+                <label for="minP">Min points per circle: </label>
+                <input type="number" id="minP" name="minP" />
+            </div>
+            <div class="row">
+                <label for="maxP">Max points per circle: </label>
+                <input type="number" id="maxP" name="maxP" />
+            </div>
+            <div class="row">
+                <label for="missPenalty">Miss penalty: </label>
+                <input type="number" id="missPenalty" name="missPenalty" />
+            </div>
+        </div>
+        <div class="column3">
+            <div class="row">
+                <label for="startS">Start size: </label>
+                <input type="number" id="startS" name="startS" />
+            </div>
+            <div class="row">
+                <label for="endS">End size: </label>
+                <input type="number" id="endS" name="endS" />
+            </div>
+            <div class="row">
+                <label for="lifeTime">Lifetime: </label>
+                <input type="number" id="lifeTime" name="lifeTime" />
+            </div>
+        </div>
+        <input type="submit" value="set" />
+    </form>
 	<input id="startButton" type="button" value="start round" />
-    <div id="userBox"><ul id="userList"></ul></div>
-    
+    </div>
+</div>
 </body>
 </html>

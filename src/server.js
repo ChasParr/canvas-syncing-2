@@ -19,168 +19,284 @@ console.log(`Listening on 127.0.0.1: ${port}`);
 const io = socketio(app);
 
 let userNum = 0;
-let leader = 0;
-let running = false;
-let circleActive = false;
-let circlePrepped = false;
-let liveCircle = 0;
-let Circles = {};
+
+const rooms = [];
 const Users = {};
-const Set = {};  // settings
+const Names = {};
 
-// initialize default settings
-Set.perRound = 10;
-Set.minInter = 1;
-Set.maxInter = 5;
-Set.range = Set.maxInter - Set.minInter;
-// minPoints + maxPoints
-Set.minP = 10;
-Set.maxP = 100;
-Set.missPenalty = 0;
-// startSize + endSize
-Set.startS = 5.0;
-Set.endS = 40.0;
-Set.lifeTime = 5.0;
-Set.growthRate = (Set.endS - Set.startS) / Set.lifeTime;
-
-
-const randColor = () => `rgb(${Math.floor(Math.random() * 255)}, 
-                             ${Math.floor(Math.random() * 255)}, 
-                             ${Math.floor(Math.random() * 255)})`;
-
-const growCircle = () => {
-  Circles[liveCircle].rad += (Set.growthRate / 10);
-  io.sockets.in('room1').emit('updateCircles', { circle: Circles[liveCircle] });
-  if (Circles[liveCircle].rad >= Set.endS) {
-    circleActive = false;
-  }
+const randColor = () => {
+  const red = Math.floor((Math.random() * 255) + 0);
+  return `rgb(${red}, ${255 - red}, ${Math.floor((Math.random() * 255) + 0)})`;
 };
 
-const endRound = () => {
-    let keys = Object.keys(Users);
-    leader = keys[0];
-      for(let i = 1; i < keys.length; i++){
-        if (Users[keys[i]].points > Users[leader].points) {
-          leader = keys[i];
-        }
+    // create a new room
+const createNewRoom = () => {
+  const newRoom = {
+    roomName: `room${rooms.length}`,
+    leader: 0,
+    running: false,
+    circleActive: false,
+    circlePrepped: false,
+    liveCircle: 0,
+    Circles: {},
+    UserIds: [],
+    Set: {},  // settings
+    Func: {},
+  };
+    // initialize default settings
+  newRoom.Set.perRound = 10; // circles per round
+  newRoom.Set.minInter = 1;  // min interval
+  newRoom.Set.maxInter = 5;  // max interval
+  newRoom.Set.range = newRoom.Set.maxInter - newRoom.Set.minInter;
+  newRoom.Set.minP = 10;      // min points
+  newRoom.Set.maxP = 100;     // max points
+  newRoom.Set.missPenalty = 0;// miss penalty
+  newRoom.Set.startS = 5.0;   // circle start size
+  newRoom.Set.endS = 40.0;    // circle end size
+  newRoom.Set.lifeTime = 5.0; // circle lifetime
+  newRoom.Set.growthRate = (newRoom.Set.endS - newRoom.Set.startS) /
+                            newRoom.Set.lifeTime; // circle growth rate
+
+  newRoom.Func.growCircle = function () {
+    newRoom.Circles[newRoom.liveCircle].rad += (newRoom.Set.growthRate / 10);
+    if (newRoom.Circles[newRoom.liveCircle].rad >= newRoom.Set.endS) {
+      newRoom.Circles[newRoom.liveCircle].color = 'rgb(50,50,50)';
+      newRoom.circleActive = false;
+    }
+    io.sockets.in(newRoom.roomName).emit('updateCircles', { circle: newRoom.Circles[newRoom.liveCircle] });
+  };
+
+  // handle the end of a round
+  newRoom.Func.endRound = function () {
+    newRoom.leader = newRoom.UserIds[0];
+    for (let i = 1; i < newRoom.UserIds.length; i++) {
+        // make the player with the most points the leader
+      if (Users[newRoom.UserIds[i]].points > Users[newRoom.leader].points) {
+        newRoom.leader = newRoom.UserIds[i];
       }
-    io.sockets.in('room1').emit('end', { winner: leader });
-}
-
-// start a new circle
-const newCircle = () => {
-  circleActive = true;
-  circlePrepped = false;
-  Circles[liveCircle] = { num: liveCircle,
-    x: Math.floor(Math.random() * 600) + 20,
-    y: Math.floor(Math.random() * 440) + 20,
-    rad: Set.startS,
-    color: 'black' };
-  io.sockets.in('room1').emit('updateCircles', { circle: Circles[liveCircle] });
-  console.log(Circles[liveCircle]);
-};
-
-const circleManager = () => {
-  if (running) {
-    if (circleActive) {
-      growCircle();
-    } else if (!circlePrepped) {
-      circlePrepped = true;
-      liveCircle++;
-
-      if (liveCircle >= Set.perRound) {
-        running = false;
-        endRound();
-      } else {
-        setTimeout(
-            newCircle,
-            Math.floor(1000 * ((Math.random() * Set.range) + Set.minInter)));
+        // remove spectator mode for players who entered mid-game
+      if (Users[newRoom.UserIds[i]].spect) {
+        Users[newRoom.UserIds[i]].spect = false;
+        io.sockets.in(newRoom.roomName).emit('updateUsers', { user: Users[newRoom.UserIds[i]] });
       }
     }
-  }
+    io.sockets.in(newRoom.roomName).emit('end', { winner: newRoom.leader });
+    io.sockets.in(newRoom.roomName).emit('updateRoom', { room: newRoom });
+  };
+    // start a new circle
+  newRoom.Func.newCircle = function () {
+    console.log(newRoom.circleActive);
+    newRoom.circleActive = true;
+    newRoom.circlePrepped = false;
+    newRoom.Circles[newRoom.liveCircle] = {
+      num: newRoom.liveCircle,
+      x: Math.floor(Math.random() * 600) + 20,
+      y: Math.floor(Math.random() * 440) + 20,
+      rad: newRoom.Set.startS,
+      color: 'black' };
+    io.sockets.in(newRoom.roomName).emit('updateCircles', { circle: newRoom.Circles[newRoom.liveCircle] });
+    console.log(newRoom.Circles[newRoom.liveCircle]);
+  };
+    // manage when circles are created and grow
+  newRoom.Func.circleManager = function () {
+    if (newRoom.running) {
+      if (newRoom.circleActive) {
+        newRoom.Func.growCircle();
+      } else if (!newRoom.circlePrepped) {
+        newRoom.circlePrepped = true;
+        newRoom.liveCircle++;
+
+        if (newRoom.liveCircle >= newRoom.Set.perRound) {
+          newRoom.running = false;
+          newRoom.Func.endRound();
+        } else {
+          setTimeout(
+                newRoom.Func.newCircle,
+                Math.floor(1000 * ((Math.random() * newRoom.Set.range) + newRoom.Set.minInter)));
+        }
+      }
+    }
+  };
+
+  rooms.push(newRoom);
+  setInterval(rooms[rooms.length - 1].Func.circleManager, 100);
+  return (rooms.length - 1);
 };
+
 
 const onJoin = (sock) => {
   const socket = sock;
 
-
   socket.on('join', () => {
     socket.uid = userNum;
     userNum++;
-    socket.join('room1');
+
+    // find a room that isn't full or make a new one
+    socket.rNum = rooms.findIndex(room => room.UserIds.length < 5);
+    if (socket.rNum === -1) {
+      socket.rNum = createNewRoom();
+    }
+    rooms[socket.rNum].UserIds.push(socket.uid);
+    if (rooms[socket.rNum].UserIds.length === 1) {
+      rooms[socket.rNum].leader = socket.uid;
+    }
+    socket.roomName = `${rooms[socket.rNum].roomName}`;
+
+    socket.join(socket.roomName);
+    // add user to users
+    Users[socket.uid] = { id: socket.uid, color: randColor(), name: `player ${socket.uid}`, room: socket.rNum, points: 0, spect: true };
     // initialize user as a spectator unless between games
-    Users[socket.uid] = { id: socket.uid, color: randColor(), name: `player ${socket.uid}`, points: 0, spect: true };
-    if (!running) {
+    if (!rooms[socket.rNum].running) {
       Users[socket.uid].spect = false;
     }
+    // add name to indicate it is taken
+    Names[Users[socket.uid].name] = socket.uid;
     // give the client the state of the server
-    socket.emit('syncClient', { id: socket.uid, Circles, Users });
+    socket.emit('syncClient', { id: socket.uid, Circles: rooms[socket.rNum].Circles, Users, rooms, roomNum: socket.rNum });
 
     // send new user's data to all clients
-    io.sockets.in('room1').emit('updateUsers', { user: Users[socket.uid] });
-    console.log('someone joined');
+    io.sockets.in(socket.roomName).emit('updateUsers', { user: Users[socket.uid] });
+    io.sockets.in(socket.roomName).emit('updateRoom', { room: rooms[socket.rNum] });
+    console.log(`someone joined ${socket.roomName}`);
   });
 
   // remove users if they leave
   socket.on('disconnect', () => {
-    socket.leave('room1');
+    socket.leave(socket.roomName);
+    delete Names[Users[socket.uid].name];
     delete Users[socket.uid];
-    if (socket.uid === leader){
-        leader = Object.keys(Users)[0];
-        console.log(leader + " is new leader");
+    rooms[socket.rNum].UserIds.splice(rooms[socket.rNum].UserIds.indexOf(socket.uid), 1);
+    if (rooms[socket.rNum].UserIds.length > 0) {
+      if (socket.uid === rooms[socket.rNum].leader) {
+        rooms[socket.rNum].leader = rooms[socket.rNum].UserIds[0];
+        console.log(`${rooms[socket.rNum].leader} is new leader`);
+        io.sockets.in(socket.roomName).emit('updateRoom', { room: rooms[socket.rNum] });
+      }
+    } else {
+      rooms[socket.rNum].leader = -1;
     }
-    io.sockets.in('room1').emit('removeUser', { id: socket.uid });
+    io.sockets.in(socket.roomName).emit('removeUser', { id: socket.uid });
     console.log('someone left');
   });
 
   // get a click on the canvas
   socket.on('click', (data) => {
     console.log('click');
-      // check collision with active circle
-    if (circleActive) {
-      const distSq = ((data.x - Circles[liveCircle].x) * (data.x - Circles[liveCircle].x)) +
-                        ((data.y - Circles[liveCircle].y) * (data.y - Circles[liveCircle].y));
-      if ((Circles[liveCircle].rad * Circles[liveCircle].rad) >= distSq) {
-        circleActive = false;
-            // change circle color
-        Circles[liveCircle].color = Users[socket.uid].color;
-            // increment points
-        Users[socket.uid].points += Set.minP + ((Set.maxP - Set.minP) *
-                (1 - ((Circles[liveCircle].rad - Set.startS) / (Set.endS - Set.startS))));
-            // update clients
-        io.sockets.in('room1').emit('updateCircles', { circle: Circles[liveCircle] });
-        io.sockets.in('room1').emit('updateUsers', { user: Users[socket.uid] });
-        console.log(`${socket.uid} won circle ${liveCircle}`);
-      } else {
-        Users[socket.uid].points -= Set.missPenalty;
-        io.sockets.in('room1').emit('updateUsers', { user: Users[socket.uid] });
+        // check if spectator mode
+    if (!Users[socket.uid].spect) {
+      if (rooms[socket.rNum].circleActive) {
+            // check collision with active circle
+        const testCircle = rooms[socket.rNum].Circles[rooms[socket.rNum].liveCircle];
+            // find distance squared
+        const distSq = ((data.x - testCircle.x) *
+                          (data.x - testCircle.x)) +
+                         ((data.y - testCircle.y) *
+                          (data.y - testCircle.y));
+        if ((testCircle.rad *
+               testCircle.rad) >= distSq) {
+          rooms[socket.rNum].circleActive = false;
+                // change circle color
+          rooms[socket.rNum].Circles[rooms[socket.rNum].liveCircle].color = Users[socket.uid].color;
+                // increment points
+          Users[socket.uid].points += rooms[socket.rNum].Set.minP +
+                    ((rooms[socket.rNum].Set.maxP - rooms[socket.rNum].Set.minP) *
+                     (1 - ((testCircle.rad - rooms[socket.rNum].Set.startS) /
+                    (rooms[socket.rNum].Set.endS - rooms[socket.rNum].Set.startS))));
+                // update clients
+          io.sockets.in(socket.roomName).emit('updateCircles', { circle: rooms[socket.rNum].Circles[rooms[socket.rNum].liveCircle] });
+          io.sockets.in(socket.roomName).emit('updateUsers', { user: Users[socket.uid] });
+          console.log(`${socket.uid} won circle ${rooms[socket.rNum].liveCircle}`);
+        } else {
+          Users[socket.uid].points -= rooms[socket.rNum].Set.missPenalty;
+          io.sockets.in(socket.roomName).emit('updateUsers', { user: Users[socket.uid] });
+        }
       }
+    } else {
+      socket.emit('denied', { message: 'spectators cannot clik circles', code: 'spect' });
     }
   });
 
   // start round
   socket.on('start', () => {
-    console.log('start');
-    if (!running) {
-      running = true;
-      circleActive = false;
-      liveCircle = 0;
-      Circles = {};
-      const keys = Object.keys(Users);
-      for (let i = 0; i < keys.length; i++) {
-        Users[keys[i]].points = 0;
-      }
+    if (rooms[socket.rNum].leader === socket.uid) {
+      console.log('start');
+      if (!rooms[socket.rNum].running) {
+        rooms[socket.rNum].running = true;
+        rooms[socket.rNum].circleActive = false;
+        rooms[socket.rNum].liveCircle = 0;
+        rooms[socket.rNum].Circles = {};
+        for (let i = 0; i < rooms[socket.rNum].UserIds.length; i++) {
+          Users[rooms[socket.rNum].UserIds[i]].points = 0;
+        }
 
-      io.sockets.in('room1').emit('reset', { Circles, Users });
-      if (!circleActive) {
-        newCircle();
+        io.sockets.in(socket.roomName).emit('reset', { Circles: rooms[socket.rNum].Circles, Users });
+        if (!rooms[socket.rNum].circleActive) {
+          rooms[socket.rNum].Func.newCircle();
+        }
       }
+    } else {
+      socket.emit('denied', { message: 'only the leader can start a round', code: 'lead' });
     }
   });
 
   // change settings
-  socket.on('changeSettings', () => {
-    io.sockets.in('room1').emit('updateSettings');
+  socket.on('changeSettings', (data) => {
+    if (rooms[socket.rNum].leader !== socket.uid) {
+        // check if leader
+      socket.emit('denied', { message: 'only the leader can change settings', code: 'sett' });
+    } else if (rooms[socket.rNum].running) {
+        // check if game is running
+      socket.emit('denied', { message: 'settings locked during round', code: 'sett' });
+    } else {
+      const newSet = data;
+      let validated = true;
+      const keys = Object.keys(newSet);
+      for (let i = 0; i < keys.length; i++) {
+            // fill empty params with existing values
+        if (newSet[keys[i]] === null) {
+          newSet[keys[i]] = rooms[socket.rNum].Set[keys[i]];
+        }
+            // check if negative
+        if (newSet[keys[i]] < 0) {
+          validated = false;
+        }
+      }
+      // check if invalid
+      if (newSet.perRound === 0 ||
+            newSet.minInter >= newSet.maxInter ||
+            newSet.minP >= newSet.maxP ||
+            newSet.startS >= newSet.endS) {
+        validated = false;
+      }
+      if (validated) {
+        newSet.range = newSet.maxInter - newSet.minInter;
+        newSet.growthRate = (newSet.endS - newSet.startS) / newSet.lifeTime;
+        rooms[socket.rNum].Set = newSet;
+        io.sockets.in(socket.roomName).emit('updateSettings', { settings: rooms[socket.rNum].Set });
+      } else {
+        socket.emit('denied', { message: 'one or more invalid settings', code: 'sett' });
+      }
+    }
+  });
+
+  socket.on('changeName', (data) => {
+      // sanitize a bit
+    const newName = data.name.replace(/</g, '&lt;');
+    console.log(newName);
+    if (newName === '') {
+      socket.emit('denied', { message: 'cannot have empty name', code: 'name' });
+    } else if (Names[newName] != null) {
+      socket.emit('denied', { message: 'name already taken', code: 'name' });
+    } else {
+        // remove old name
+      delete Names[Users[socket.uid].name];
+        // add new name
+      Names[newName] = socket.uid;
+        // set new name
+      Users[socket.uid].name = newName;
+        // update clients
+      io.sockets.in(socket.roomName).emit('updateUsers', { user: Users[socket.uid] });
+    }
   });
 };
 
@@ -191,4 +307,3 @@ io.sockets.on('connection', (socket) => {
 
 
 console.log('Websocket server started');
-setInterval(circleManager, 100);

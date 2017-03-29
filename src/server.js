@@ -157,6 +157,7 @@ const onJoin = (sock) => {
     // send new user's data to all clients
     io.sockets.in(socket.roomName).emit('updateUsers', { user: Users[socket.uid] });
     io.sockets.in(socket.roomName).emit('updateRoom', { room: rooms[socket.rNum] });
+    io.sockets.in(socket.roomName).emit('newMessage', { message: `${Users[socket.uid].name} joined ${socket.roomName}`, color: "black"});
     console.log(`someone joined ${socket.roomName}`);
   });
 
@@ -169,6 +170,7 @@ const onJoin = (sock) => {
     if (rooms[socket.rNum].UserIds.length > 0) {
       if (socket.uid === rooms[socket.rNum].leader) {
         rooms[socket.rNum].leader = rooms[socket.rNum].UserIds[0];
+        io.sockets.in(socket.roomName).emit('newMessage', { message: `${rooms[socket.rNum].leader} is new leader`, color: "black"});
         console.log(`${rooms[socket.rNum].leader} is new leader`);
         io.sockets.in(socket.roomName).emit('updateRoom', { room: rooms[socket.rNum] });
       }
@@ -177,6 +179,13 @@ const onJoin = (sock) => {
     }
     io.sockets.in(socket.roomName).emit('removeUser', { id: socket.uid });
     console.log('someone left');
+  });
+  
+  socket.on('sendMessage', (data) => {
+    
+    const newMessage = data.message.replace(/</g, '&lt;');
+    io.sockets.in(socket.roomName).emit('newMessage', { message: `${Users[socket.uid].name}: ${newMessage}`, color: Users[socket.uid].color});
+    
   });
 
   // get a click on the canvas
@@ -212,7 +221,7 @@ const onJoin = (sock) => {
         }
       }
     } else {
-      socket.emit('denied', { message: 'spectators cannot clik circles', code: 'spect' });
+      socket.emit('denied', { message: 'server: spectators cannot clik circles', code: 'spect' });
     }
   });
 
@@ -235,7 +244,7 @@ const onJoin = (sock) => {
         }
       }
     } else {
-      socket.emit('denied', { message: 'only the leader can start a round', code: 'lead' });
+      socket.emit('denied', { message: 'server: only the leader can start a round', code: 'lead' });
     }
   });
 
@@ -274,7 +283,7 @@ const onJoin = (sock) => {
         rooms[socket.rNum].Set = newSet;
         io.sockets.in(socket.roomName).emit('updateSettings', { settings: rooms[socket.rNum].Set });
       } else {
-        socket.emit('denied', { message: 'one or more invalid settings', code: 'sett' });
+        socket.emit('denied', { message: 'server: one or more invalid settings', code: 'sett' });
       }
     }
   });
@@ -284,9 +293,9 @@ const onJoin = (sock) => {
     const newName = data.name.replace(/</g, '&lt;');
     console.log(newName);
     if (newName === '') {
-      socket.emit('denied', { message: 'cannot have empty name', code: 'name' });
+      socket.emit('denied', { message: 'server: cannot have empty name', code: 'name' });
     } else if (Names[newName] != null) {
-      socket.emit('denied', { message: 'name already taken', code: 'name' });
+      socket.emit('denied', { message: 'server: name already taken', code: 'name' });
     } else {
         // remove old name
       delete Names[Users[socket.uid].name];

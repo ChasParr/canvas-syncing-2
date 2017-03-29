@@ -15,6 +15,7 @@
 		let draws = {};
         let users = {};
         let rooms = [];
+        let messages = [];
 		const draw = () => {
 			ctx.fillStyle="grey";
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -51,6 +52,17 @@
                 userList.appendChild(user);
             }
         };
+        
+        const displayMessages = () => {
+            const chatBox = document.querySelector("#chatBox");
+            chatBox.innerHTML = "";
+            for (let i = 0; i < messages.length; i++){
+                let message = document.createElement("LI");
+                message.style.color = messages[i].color;
+                message.innerHTML += messages[i].message;
+                chatBox.appendChild(message);
+            }
+        }
 		
         // start a match
         const start = (e) => {
@@ -149,6 +161,10 @@
             
             socket.on('end', (data) => {
                 console.log(users[data.winner] + ' won');
+                if (messages.push({message: `${users[data.winner].name} won`, color: "black"}) > 20){
+                    messages.shift();
+                }
+                displayMessages();
             });
             
             socket.on('updateSettings', (data) => {
@@ -156,10 +172,19 @@
                 syncSettings();
             });
             
-            
+            socket.on('newMessage', (data) => {
+                if (messages.push(data) > 20){
+                    messages.shift();
+                }
+                displayMessages();
+            });
             
             socket.on('denied', (data) => {
                 console.log(data.message);
+                if (messages.push({message: data.message, color: "black"}) > 20){
+                    messages.shift();
+                }
+                displayMessages();
                 
                 switch (data.code) {
                   case "sett":{
@@ -184,6 +209,14 @@
                 e.preventDefault();
             });
             
+            const messageForm = document.querySelector("#messageForm");
+            const messageField = document.querySelector("#messageField");
+            
+            messageForm.addEventListener('submit', (e) => {
+                socket.emit('sendMessage', { message: messageField.value });
+                messageField.value = "";
+                e.preventDefault();
+            });
             
             
             const setForm = document.querySelector("#roomSettings");
@@ -227,13 +260,18 @@
             padding: 20px 1px 1px 1px;
         }
         #userBox {
-            margin: 10px 15px 15px 50px;
+            margin: 20px 10px 0px 0px;
+            padding:10px 15px 15px 15px;
             float: right;
             background-color: rgb(240,240,240);
         }
         #userList { 
             margin: 5px;
             padding: 5px 0px 10px 10px; 
+            list-style-type: none;
+            box-shadow: 0px 0px 1px grey;
+        }
+        #chatBox {
             list-style-type: none;
             box-shadow: 0px 0px 1px grey;
         }
@@ -275,6 +313,11 @@
             <label for="name">Name: </label>
             <input id="nameField" type="text" name="name" />
             <input type="submit" value="change" />
+        </form>
+        <ul id="chatBox"></ul>
+        <form id="messageForm">
+            <input id="messageField" type="text" name="messageField" />
+            <input type="submit" value="send" />
         </form>
     </div>
     </div>
